@@ -200,6 +200,21 @@ class M2p_module(object):
 
         return (gain)
 
+    def get_lastcouple_switchsetting(self):
+        """
+         Get the last frontpanel couple mode (AC/DC) switch setting command.
+         This in NOT the same as the couple mode settings on the front panel!
+         posible results: 0 = DC 1=AC
+        """
+        dummy_data = bytearray([0,0])
+        r_data = self.spi_rack.read_data(self.module, 6, BICPINS_MODE, BICPINS_SPEED, dummy_data)
+        mode = -1
+        if r_data[1] & 0b00010000:
+            mode = 1
+        else:
+            mode = 0
+        return (mode)
+        
     def get_couple_switchsetting(self):
         """
          Get the frontpanel couple mode (AC/DC) switch setting.
@@ -223,9 +238,6 @@ class M2p_module(object):
         clipped = -1
         dummy_data = bytearray([0,0])
         r_data = self.spi_rack.read_data(self.module, 7, BICPINS_MODE, BICPINS_SPEED, dummy_data)
-        
-        print("r_data[0]: ","{:08b}".format(r_data[0]),"{:02x}".format(r_data[0] ))
-        print("r_data[1]: ","{:08b}".format(r_data[1]),"{:02x}".format(r_data[1] ))
  
         if (((r_data[0] & 0b01000000) == 0) & ((r_data[0] & 0b10000000) == 0)):
                 clipped = 0
@@ -244,24 +256,11 @@ class M2p_module(object):
         # 1 if pos clipped
         # 2 if neg clipped
         # 3 if pos and neg clipped (is posible when clipped is latched)
+        
         clipped = -1
         dummy_data = bytearray([0,0])
         r_data = self.spi_rack.read_data(self.module, 7, BICPINS_MODE, BICPINS_SPEED, dummy_data)
-        
-        print("r_data[0]: ","{:08b}".format(r_data[0]),"{:02x}".format(r_data[0] ))
-        print("r_data[1]: ","{:08b}".format(r_data[1]),"{:02x}".format(r_data[1] ))
- 
-        # if (((r_data[0] & 0b00010000) == 0) & ((r_data[0] & 0b00100000) == 0)):
-                # clipped = 0
-        # elif (r_data[0] & 0b00110000 == 0b00110000):
-                # clipped = 3
-        # elif (r_data[0] & 0b00010000):
-                # clipped = 2
-        # elif (r_data[0] & 0b00100000):
-                # clipped = 1
-                
-                
-        #test = r_data[0] & 0b00110000
+
         if (r_data[0] & 0b00110000) == 0b00110000:
             clipped = 0
         elif (((r_data[0] & 0b00010000) == 0) & ((r_data[0] & 0b00100000) == 0)):
