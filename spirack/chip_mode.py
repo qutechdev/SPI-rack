@@ -27,6 +27,7 @@ SAMD51_MODE = 0 # SAMD51G19A microcontroller
 LTC2758_SPEED = 6       # 14MHz (40MHz later)
 LTC2758_RD_SPEED = 8    # 10.5MHz
 AD9106_SPEED = 6        # 14MHz (Can go higher)
+AD9106_RD_SPEED = 21    # 4MHz;
 SAMD51_SPEED = 10       # 8.4 MHz
 MAX5702_SPEED = 6       # 14MHz
 MAX521x_SPEED = 6       # 14MHz
