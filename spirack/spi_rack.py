@@ -271,6 +271,16 @@ class SPI_rack(serial.Serial):
         """
         self.write(bytearray([ord('t')]))
 
+    def get_rack_identifier(self):
+        """Reads the dipswitch setting in the master module
+
+        Returns:
+            identifier byte
+        """
+        s_data = bytearray([0xFF]) 
+        r_data = self.read_data(0, 4, 0, 6, s_data)     
+        return int.from_bytes(r_data,'little',signed=True)
+
     def get_temperature(self):
         """ Returns the temperature in the C1b module
 
