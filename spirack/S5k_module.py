@@ -78,7 +78,7 @@ class S5k_module(object):
         noise or AWG.
 
         Args:
-            DAC (int: 1-16): DAC of which to change the mode
+            DAC (int: 1-16): DAC for which to change the mode
             waveform (string): waveform type to set
         """
         possible_values = {'DC': 1, 'sawtooth': 0b10001, 'noise': 0b100001, 'AWG': 0}
@@ -87,8 +87,8 @@ class S5k_module(object):
 
         self.DAC_waveform_mode[DAC-1] = waveform
 
-        DAC_IC = S5k_module.DAC_mapping[DAC][0]
-        DAC_internal = S5k_module.DAC_mapping[DAC][1]
+        DAC_IC = S5k_module.DAC_mapping[DAC][0]        # The DAC group (of 4 DACs)
+        DAC_internal = S5k_module.DAC_mapping[DAC][1]  # The DAC number in the group
 
         if DAC_internal == 1:
             data = self.read_AD9106(self.DAreg.WAV2_1CONFIG, DAC_IC)
@@ -112,6 +112,31 @@ class S5k_module(object):
             register = self.DAreg.WAV4_3CONFIG
 
         self.write_AD9106(register, data, DAC_IC)
+
+    def get_waveform_mode(self, DAC):
+        """
+        """
+        possible_values = {0:'DC', 1:'sawtooth', 2:'noise', 3:'AWG'}
+        if waveform not in possible_values:
+            raise ValueError('Value {} does not exist. Possible values are: {}'.format(waveform, possible_values))
+
+        DAC_IC = S5k_module.DAC_mapping[DAC][0]        # The DAC group (of 4 DACs)
+        DAC_internal = S5k_module.DAC_mapping[DAC][1]  # The DAC number in the group
+
+        if DAC_internal == 1:
+            data = self.read_AD9106(self.DAreg.WAV2_1CONFIG, DAC_IC)
+            data &= 0x3000
+        elif DAC_internal == 2:
+            data = self.read_AD9106(self.DAreg.WAV2_1CONFIG, DAC_IC)
+            data &= 0x0030
+        elif DAC_internal == 3:
+            data = self.read_AD9106(self.DAreg.WAV4_3CONFIG, DAC_IC)
+            data &= 0x3000
+        else:
+            data = self.read_AD9106(self.DAreg.WAV4_3CONFIG, DAC_IC)
+            data &= 0x0030
+
+        return possible_values[data]
 
     def set_sawtooth_parameters(self, DAC, sawtooth_type, stepsize):
         """Set the parameters for sawtooth mode
@@ -214,9 +239,16 @@ class S5k_module(object):
             DAC (int: 1-16): DAC of which DC value to change
             gain (float): value between -1.99 and 2.0
         """
+        if gain > 2.0:
+            print('Warning! Value too high. Gain is set to 2.0')
+            gain = 2.0
+        elif gain < -1.99:
+            print('Warning! Value too low. Gain is set to -1.99')
+            gain = -1.99
+        
         gain = -gain # Compensate for inverting amplifier
         self.DAC_dgain[DAC-1] = gain
-        data = int(gain*(1<<14))
+        data = int(gain*(1<<4))    # multiplying by 16 is the same as shifting 4 bits to the left to align with the register field
 
         DAC_IC = S5k_module.DAC_mapping[DAC][0]
         DAC_internal = S5k_module.DAC_mapping[DAC][1]
@@ -230,6 +262,7 @@ class S5k_module(object):
         else:
             register = self.DAreg.DAC4_DGAIN
 
+        print("The digital gain field is updated to",data)
         self.write_AD9106(register, data, DAC_IC)
 
     def set_digital_offset(self, DAC, offset):
@@ -242,7 +275,7 @@ class S5k_module(object):
             offset (float): value between -2.85 and 2.85
         """
         #12 bit offset
-        Vmax = 2.857
+        Vmax = 2.875
         Vmin = -2.875
         Vdif = Vmax - Vmin
 
@@ -280,6 +313,9 @@ class S5k_module(object):
         Args:
             run (bool): Set module running True or False
         """
+        # input checks
+        if run not in range(2):
+            raise ValueError("The 'run' parameter of {} is illegal. Possible values are 0 and 1.".format(run))
         self.module_running = run
 
         for i in [0, 1, 3, 4]:
@@ -291,7 +327,7 @@ class S5k_module(object):
         else:
             reference = 0
 
-        self.spi_rack.write_data(self.module, 5, BICPINS_MODE, BICPINS_SPEED, bytearray([reference | 2 | (run<<7)]))
+        self.spi_rack.write_data(self.module, 5, BICPINS_MODE, BICPINS_SPEED, bytearray([(run<<7) | 2 | reference]))
 
     def upload_waveform(self, DAC, waveform, start_addr, set_pattern_length=True):
         """Upload waveform to selected DAC
@@ -318,7 +354,7 @@ class S5k_module(object):
         # Shift into correct place for registers
         new_waveform = new_waveform<<4
         # Reverse waveform order, register in IC gets updated in Reverse
-        new_waveform = np.flipud(new_waveform)
+        new_waveform = np.flipud(new_waveform)  # reversing order of elements in the array
 
         # Create new array to fit all the bytes
         # Waveform data is 16-bit, but SPI data is 8-bit
@@ -391,9 +427,26 @@ class S5k_module(object):
         DAC_IC = S5k_module.DAC_mapping[DAC][0]
         self.write_AD9106(self.DAreg.PAT_PERIOD, length, DAC_IC)
 
-    def set_pattern_length_trigger(self, length):
-        if length not in range(10, 4095):
-            raise ValueError('Value {} not allowed. Needs to be between 10 and 4095'.format(length))
+    def set_pattern_length_DAC(self, DAC, length):
+        # input checks
+        if length > 65535:
+            raise ValueError('Pattern length {} not allowed. Needs to be under or equal to 65536'.format(length))
+        DAC_IC = S5k_module.DAC_mapping[DAC][0]
+        self.write_AD9106(self.DAreg.PAT_PERIOD, length, DAC_IC)
+
+    def set_pattern_length_trigger(self, length, S5k_version = 1.0):
+        # Possible versions are:
+        #     Version 1.0: jumper-given addressing, trigger length has a 14-bit limit
+        #     Version 1.1: slot-based addressing, trigger length has a 16-bit limit
+        # The module version is written on a sticker on the module side / front
+        if S5k_version == 1.0:
+            if length not in range(10, 4095):
+                raise ValueError('Value {} not allowed. Needs to be between 10 and 4095'.format(length))
+        elif S5k_version == 1.1:
+            if length not in range(10, 16383):
+                raise ValueError('Value {} not allowed. Needs to be between 10 and 16383'.format(length))
+        else:
+            raise ValueError('S5k module version {} is not recognized. Can be 1.0 or 1.1'.format(S5k_version))
 
         b1 = (length>>8) & 0xFF
         b2 = length & 0xFF
@@ -420,11 +473,11 @@ class S5k_module(object):
         # Toggles the sync pin on the clock distribution/divider IC to sync
         # up all the clocks. Necessary after any clock change
         self.spi_rack.write_data(self.module, 5, BICPINS_MODE, BICPINS_SPEED,
-                                 bytearray([reference | 2 | (self.module_running<<7)]))
+                                 bytearray([(self.module_running<<7) | 2 | reference]))
         self.spi_rack.write_data(self.module, 5, BICPINS_MODE, BICPINS_SPEED,
-                                 bytearray([reference | 0 | (self.module_running<<7)]))
+                                 bytearray([(self.module_running<<7) | 0 | reference]))
         self.spi_rack.write_data(self.module, 5, BICPINS_MODE, BICPINS_SPEED,
-                                 bytearray([reference | 2 | (self.module_running<<7)]))
+                                 bytearray([(self.module_running<<7) | 2 | reference]))
 
     def set_clock_division(self, DAC, divisor):
         allowed_values = [1] + list(range(2, 512, 2))
@@ -483,7 +536,7 @@ class S5k_module(object):
         b1 = 1<<7
         b2 = register
         s_data = bytearray([b1, b2, 0, 0])
-        r_data = self.spi_rack.read_data(self.module, SPI_addr, AD9106_MODE, AD9106_SPEED, s_data)
+        r_data = self.spi_rack.read_data(self.module, SPI_addr, AD9106_MODE, AD9106_RD_SPEED, s_data)
 
         return int.from_bytes(r_data[2:4], byteorder='big')
 
@@ -496,48 +549,48 @@ class AD9106_registers:
     DAC3AGAIN = 0x05
     DAC2AGAIN = 0x06
     DAC1AGAIN = 0x07
-    DACxRANGE = 0x08
-    DAC4RSET = 0x09
-    DAC3RSET = 0x0A
-    DAC2RSET = 0x0B
-    DAC1RSET = 0x0C
-    CALCONFIG = 0x0D
-    COMPOFFSET = 0x0E
+    DACxRANGE = 0x08      # Gain range control for all 4 outputs
+    DAC4RSET = 0x09       # Settings for the value of Rset resistor
+    DAC3RSET = 0x0A       # Settings for the value of Rset resistor
+    DAC2RSET = 0x0B       # Settings for the value of Rset resistor
+    DAC1RSET = 0x0C       # Settings for the value of Rset resistor
+    CALCONFIG = 0x0D      # Used for calibration
+    COMPOFFSET = 0x0E     # Used for calibration
     RAMUPDATE = 0x1D
-    PAT_STATUS = 0x1E
-    PAT_TYPE = 0x1F
-    PATTERN_DLY = 0x20
-    DAC4DOF = 0x22
-    DAC3DOF = 0x23
-    DAC2DOF = 0x24
-    DAC1DOF = 0x25
-    WAV4_3CONFIG = 0x26
-    WAV2_1CONFIG = 0x27
+    PAT_STATUS = 0x1E     # Starts/stops pattern generation, and flag for pattern status
+    PAT_TYPE = 0x1F       # Determines whether the pattern runs continuously or a fixed number of times
+    PATTERN_DLY = 0x20    # Delay from trigger to start
+    DAC4DOF = 0x22        # Digital offset
+    DAC3DOF = 0x23        # Digital offset
+    DAC2DOF = 0x24        # Digital offset
+    DAC1DOF = 0x25        # Digital offset
+    WAV4_3CONFIG = 0x26   # Mode select (DC / Sawtooth / noise / DDS), and waveform source
+    WAV2_1CONFIG = 0x27   # Mode select (DC / Sawtooth / noise / DDS), waveform source, and channel summing options
     PAT_TIMEBASE = 0x28
     PAT_PERIOD = 0x29
-    DAC4_3PATx = 0x2A
-    DAC2_1PATx = 0x2B
-    DOUT_START_DLY = 0x2C
-    DOUT_CONFIG = 0x2D
-    DAC4_CST = 0x2E
-    DAC3_CST = 0x2F
-    DAC2_CST = 0x30
-    DAC1_CST = 0x31
+    DAC4_3PATx = 0x2A     # Number of pattern repetitions 
+    DAC2_1PATx = 0x2B     # Number of pattern repetitions
+    DOUT_START_DLY = 0x2C # Controls for the DOUT marker signal
+    DOUT_CONFIG = 0x2D    # Controls for the DOUT marker signal
+    DAC4_CST = 0x2E       # Value for 'constant' mode
+    DAC3_CST = 0x2F       # Value for 'constant' mode
+    DAC2_CST = 0x30       # Value for 'constant' mode
+    DAC1_CST = 0x31       # Value for 'constant' mode
     DAC4_DGAIN = 0x32
     DAC3_DGAIN = 0x33
     DAC2_DGAIN = 0x34
     DAC1_DGAIN = 0x35
-    SAW4_3CONFIG = 0x36
-    SAW2_1CONFIG = 0x37
-    DDS_TW32 = 0x3E
-    DDS_TW1 = 0x3F
-    DDS4_PW = 0x40
-    DDS3_PW = 0x41
-    DDS2_PW = 0x42
-    DDS1_PW = 0x43
-    TRIG_TW_SEL = 0x44
-    DDSx_CONFIG = 0x45
-    TW_RAM_CONFIG = 0x47
+    SAW4_3CONFIG = 0x36   # Configuration (type & samples/step) for a sawtooth mode
+    SAW2_1CONFIG = 0x37   # Configuration (type & samples/step) for a sawtooth mode
+    DDS_TW32 = 0x3E       # Tuning word for DDR mode, part 2
+    DDS_TW1 = 0x3F        # Tuning word for DDR mode, part 1
+    DDS4_PW = 0x40        # Phase offset for DDR mode
+    DDS3_PW = 0x41        # Phase offset for DDR mode
+    DDS2_PW = 0x42        # Phase offset for DDR mode
+    DDS1_PW = 0x43        # Phase offset for DDR mode
+    TRIG_TW_SEL = 0x44    # Sets the trigger delay to equal the first-repetition delay ('start delay')
+    DDSx_CONFIG = 0x45    # Controls for DDS mode
+    TW_RAM_CONFIG = 0x47  # Controls for DDS mode
     START_DLY4 = 0x50
     START_ADDR4 = 0x51
     STOP_ADDR4 = 0x52
@@ -554,5 +607,5 @@ class AD9106_registers:
     START_ADDR1 = 0x5D
     STOP_ADDR1 = 0x5E
     DDS_CYC1 = 0x5F
-    CFG_ERROR = 0x60
+    CFG_ERROR = 0x60      # Flags for various errors for the user
     SRAM_DATA = 0x6000
