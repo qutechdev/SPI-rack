@@ -10,7 +10,7 @@ Todo:
 """
 
 from .spi_rack import SPI_rack
-from .chip_mode import AD9106_MODE, AD9106_SPEED, LMK01010_MODE, LMK01010_SPEED, BICPINS_SPEED, BICPINS_MODE
+from .chip_mode import AD9106_MODE, AD9106_SPEED, AD9106_RD_SPEED, LMK01010_MODE, LMK01010_SPEED, BICPINS_SPEED, BICPINS_MODE
 import numpy as np
 
 class S5k_module(object):
@@ -33,9 +33,10 @@ class S5k_module(object):
         module_running (bool): True or False if the module is running
     """
 
-    #Maps the DACs, as numbered at module front plate, to the DAC IC SPI address
-    #and internal DAC
-    #So DAC 1 maps to DAC IC with SPI addres 3 and internal DAC 4
+    # Maps the DACs, as numbered at module front plate, to the DAC IC SPI address
+    # and internal DAC (within the 4-channel DAC IC).
+    # DAC:[DAC_IC,DAC_internal]
+    # So DAC 1 maps to DAC IC with SPI addres 3 and internal DAC 4
     DAC_mapping = {1:[3,4], 2:[3,3], 3:[3,1], 4:[3,2], 5:[1,4], 6:[1,3], 7:[1,1], 8:[1,2],
                    9:[4,4], 10:[4,3], 11:[4,1], 12:[4,2], 13:[0,4], 14:[0,3], 15:[0,1], 16:[0,2]}
 
@@ -58,8 +59,8 @@ class S5k_module(object):
         self.write_LMK_data(1, 1<<16 | 0<<17 | 0b0<<8) #Enable channel 1, undivided
         self.write_LMK_data(6, 1<<16 | 0<<17 | 0b0<<8) #Enable channel 6, undivided
         self.write_LMK_data(7, 1<<16 | 0<<17 | 0b0<<8) #Enable channel 7, undivided
-
-        self.DAreg = AD9106_registers #DAreg contains all AD9106 register addresses
+        
+        self.DAreg = AD9106_registers          #DAreg contains all AD9106 register addresses
         self.DAC_waveform_mode = 16*[None]
         self.DAC_DC_val = 16*[None]
         self.DAC_dgain = 16*[None]
@@ -70,6 +71,23 @@ class S5k_module(object):
         self.reference = None
         self.set_clock_source('internal')
         self.run_module(False)
+        
+        self.DAC_limits = {1:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      2:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      3:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      4:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      5:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      6:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      7:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      8:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      9:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      10:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      11:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      12:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      13:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      14:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      15:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752},
+                      16:{'Vmax':2.875,'Vmin':-2.875,'Vscale':5.752}}
 
     def set_waveform_mode(self, DAC, waveform):
         """Sets the selected DAC to a certain waveform mode
@@ -81,6 +99,7 @@ class S5k_module(object):
             DAC (int: 1-16): DAC for which to change the mode
             waveform (string): waveform type to set
         """
+        # input checks
         possible_values = {'DC': 1, 'sawtooth': 0b10001, 'noise': 0b100001, 'AWG': 0}
         if waveform not in possible_values:
             raise ValueError('Value {} does not exist. Possible values are: {}'.format(waveform, possible_values))
@@ -114,8 +133,20 @@ class S5k_module(object):
         self.write_AD9106(register, data, DAC_IC)
 
     def get_waveform_mode(self, DAC):
+        """Returns the waveform mode of the selected DAC
+
+        Args:
+            DAC (int: 1-16): DAC for which the waveform is checked
         """
-        """
+        # input checks
+        DAC_list = list(range(1,17,1))
+        if DAC not in DAC_list:
+            raise ValueError('DAC {} does not exist. Possible values are: {}'.format(DAC_list))
+
+        # software value
+        print("The waveform mode (in SW) is",self.DAC_waveform_mode[DAC])
+        
+        # hardware value
         possible_values = {0:'DC', 1:'sawtooth', 2:'noise', 3:'AWG'}
         if waveform not in possible_values:
             raise ValueError('Value {} does not exist. Possible values are: {}'.format(waveform, possible_values))
@@ -136,6 +167,7 @@ class S5k_module(object):
             data = self.read_AD9106(self.DAreg.WAV4_3CONFIG, DAC_IC)
             data &= 0x0030
 
+        print("The waveform mode (in HW) is",possible_values[data])
         return possible_values[data]
 
     def set_sawtooth_parameters(self, DAC, sawtooth_type, stepsize):
@@ -154,6 +186,7 @@ class S5k_module(object):
         if self.DAC_waveform_mode[DAC-1] != 'sawtooth':
             print('DAC {} is not set to sawtooth mode!'.format(DAC))
 
+        # input checks
         possible_values = {'ramp_up': 0, 'ramp_down': 1, 'triangle': 2, 'no_wave': 3}
         if sawtooth_type not in possible_values:
             raise ValueError('Value {} does not exist. Possible values are: {}'.format(sawtooth_type, possible_values))
@@ -186,6 +219,36 @@ class S5k_module(object):
 
         self.write_AD9106(register, data, DAC_IC)
 
+    def set_DAC_scale(self, DAC, Vmax=2.875, Vmin=-2.875):
+        """
+        "Informs" the SW about the max and min levels for the DAC.
+        The levels themselves are deterined by the HW used,
+        and should be known to the user.
+        """
+        # input checks
+        if Vmax > 2.875:
+            print('The given max value is too high. Will be recorded as {}'.format(2.875))
+            Max_level=2.875
+        if Vmax < 0:
+            print('The given max value of {} is negative. Please enter a positive value'.format(Vmax))
+            Max_level=2.875
+        else:
+            Max_level=Vmax
+        
+        # input checks
+        if Vmin < -2.875:
+            print('The given min value is too low. Will be recorded as {}'.format(-2.875))
+            Min_level=-2.875
+        if Vmin > 0:
+            print('The given min value of {} is positive. Please enter a negative value'.format(Vmin))
+            Min_level=-2.875
+        else:
+            Min_level=Vmin
+        
+        DAC_limits[DAC-1]['Vmax'] = Max_level
+        DAC_limits[DAC-1]['Vmin'] = Min_level
+        DAC_limits[DAC-1]['Vscale'] = Max_level - Min_level + 0.002   # 5.75V; need to slightly stretch the scale to avoid special cases at ±2.875
+
     def set_DC_value(self, DAC, value):
         """Set the DC value
 
@@ -195,25 +258,31 @@ class S5k_module(object):
 
         Args:
             DAC (int: 1-16): DAC of which DC value to change
-            value (float): Voltage within range -2.875 -> 2.857
+            value (float): Voltage within range (by default ±2.875V)
         """
         if self.DAC_waveform_mode[DAC-1] != 'DC':
             #raise ValueError('DAC {} needs to be set to DC to set DC value'.format(DAC))
-            print("Warning! DAC will only output this DC level when the module is NOT running/triggered!")
+            print("\nWarning! DAC",DAC-1,"is in",self.DAC_waveform_mode[DAC-1],"mode and not currently configured to a DC output.",
+            "\nIt will only show this DC level when the module is NOT running/triggered!")
 
-        Vmax = 2.857
-        Vmin = -2.875
-        Vdif = Vmax - Vmin
-
-        if value > Vmax:
-            print('Warning! Value too high, set to: {}'.format(Vmax))
-            value = Vmax
-        elif value < Vmin:
-            print('Warning! Value too low, set to: {}'.format(Vmin))
-            value = Vmin
+        # The S5k scale is set by default to ±2.875V
+        # The 'set_DAC_scale' only needs to run if the S5k is a customiz build with a different scale
+        #self.set_DAC_scale(DAC, Vmax=2.875, Vmin=-2.875)
+        
+        # input checks
+        if value > self.DAC_limits[DAC-1]['Vmax']:
+            print('Warning! Value too high, set to: {}'.format(self.DAC_limits[DAC-1]['Vmax']))
+            value = self.DAC_limits[DAC-1]['Vmax']
+        elif value < self.DAC_limits[DAC-1]['Vmin']:
+            print('Warning! Value too low, set to: {}'.format(self.DAC_limits[DAC-1]['Vmin']))
+            value = self.DAC_limits[DAC-1]['Vmin']
 
         self.DAC_DC_val[DAC-1] = value
-        intval = int((-4096/Vdif * value) - 7) #Calculate int value from float
+        # Calculate code (as int) from voltage (as float)
+        # For the default range of ±2.875V, the resolution is ~712 codes per Volt 
+        # (so 1 code is ~1.4mV ),
+        Vscale = self.DAC_limits[DAC-1]['Vscale']
+        intval = int((-4096/Vscale * value) - 7) #Calculate int value from float
         data = intval << 4
 
         DAC_IC = S5k_module.DAC_mapping[DAC][0]
@@ -230,6 +299,38 @@ class S5k_module(object):
 
         self.write_AD9106(register, data, DAC_IC)
 
+    def get_DC_value(self, DAC):
+        """Returns the DC value for the given DAC
+        """
+        print("\nget_DC_value:")
+        
+        # software value
+        print("    For DAC",DAC,"the DC value (in SW) is:",self.DAC_DC_val[DAC-1])
+
+        # hardware value
+        DAC_IC = S5k_module.DAC_mapping[DAC][0]
+        DAC_internal = S5k_module.DAC_mapping[DAC][1]
+        print("\nget_DC_value:",
+        "\nDAC",DAC,"is produced by AWG (DAC_IC) number",DAC_IC,"channel",DAC_internal,".")
+        
+        if DAC_internal == 1:
+            register = self.DAreg.DAC1_CST
+        elif DAC_internal == 2:
+            register = self.DAreg.DAC2_CST
+        elif DAC_internal == 3:
+            register = self.DAreg.DAC3_CST
+        else:
+            register = self.DAreg.DAC4_CST
+        
+        DAC_raw_data = self.read_AD9106(register, DAC_IC)
+        print("    For DAC",DAC,": raw data is",DAC_raw_data,"(bin ",bin(DAC_raw_data),")")
+        DAC_DC_code = DAC_raw_data >> 4
+        print("    For DAC",DAC,": DC data is",DAC_DC_code)
+
+        dc_level = DAC_DC_code*self.DAC_limits[DAC-1]['Vscale']/(-4096)
+        print("    For DAC",DAC,"the DC value (in HW) is:",round(dc_level,3))
+        return dc_level
+
     def set_digital_gain(self, DAC, gain):
         """Set the digital gain
 
@@ -239,6 +340,7 @@ class S5k_module(object):
             DAC (int: 1-16): DAC of which DC value to change
             gain (float): value between -1.99 and 2.0
         """
+        # input checks
         if gain > 2.0:
             print('Warning! Value too high. Gain is set to 2.0')
             gain = 2.0
@@ -262,29 +364,30 @@ class S5k_module(object):
         else:
             register = self.DAreg.DAC4_DGAIN
 
-        print("The digital gain field is updated to",data)
         self.write_AD9106(register, data, DAC_IC)
 
     def set_digital_offset(self, DAC, offset):
         """Set the digital offset
 
-        Sets the digital offset of the DAC.
+        Sets the digital offset of the DAC. 
+        The user should know the voltage increment of one code step.
 
         Args:
             DAC (int: 1-16): DAC of which DC value to change
             offset (float): value between -2.85 and 2.85
         """
-        #12 bit offset
-        Vmax = 2.875
-        Vmin = -2.875
-        Vdif = Vmax - Vmin
-
-        if offset > Vmax:
-            print('Warning! Value too high, set to: {}'.format(Vmax))
-            offset = Vmax
-        elif offset < Vmin:
-            print('Warning! Value too low, set to: {}'.format(Vmin))
-            offset = Vmin
+        
+        # The S5k scale is set by default to ±2.875V
+        # The 'set_DAC_scale' only needs to run if the S5k is a customiz build with a different scale
+        #self.set_DAC_scale(DAC, Vmax=2.875, Vmin=-2.875)
+        
+        # input checks
+        if offset > self.DAC_limits[DAC-1]['Vmax']:
+            print('Warning! Value too high, set to: {}'.format(self.DAC_limits[DAC-1]['Vmax']))
+            offset = self.DAC_limits[DAC-1]['Vmax']
+        elif offset < self.DAC_limits[DAC-1]['Vmin']:
+            print('Warning! Value too low, set to: {}'.format(self.DAC_limits[DAC-1]['Vmin']))
+            offset = self.DAC_limits[DAC-1]['Vmin']
 
         self.DAC_doffset[DAC-1] = offset
         intval = int((-4096/Vdif * offset) - 7)
@@ -321,13 +424,20 @@ class S5k_module(object):
         for i in [0, 1, 3, 4]:
             self.write_AD9106(self.DAreg.PAT_STATUS, run, i)
 
-        # Check to see if internal oscillator needs to be disabled
+        # Check to see if internal (on-board) oscillator needs to be disabled.
+        # Disabling is done using the 'external' clock option.
         if self.reference == 'internal':
             reference = 1
         else:
             reference = 0
 
         self.spi_rack.write_data(self.module, 5, BICPINS_MODE, BICPINS_SPEED, bytearray([(run<<7) | 2 | reference]))
+
+    def get_run_status(self):
+        """
+        """
+        print("The S5k run status is",self.module_running,"\n")
+        #print("The trigger status is",)
 
     def upload_waveform(self, DAC, waveform, start_addr, set_pattern_length=True):
         """Upload waveform to selected DAC
@@ -354,7 +464,7 @@ class S5k_module(object):
         # Shift into correct place for registers
         new_waveform = new_waveform<<4
         # Reverse waveform order, register in IC gets updated in Reverse
-        new_waveform = np.flipud(new_waveform)  # reversing order of elements in the array
+        new_waveform = np.flipud(new_waveform)
 
         # Create new array to fit all the bytes
         # Waveform data is 16-bit, but SPI data is 8-bit
@@ -424,10 +534,6 @@ class S5k_module(object):
         self.write_AD9106(stop_register, data, DAC_IC)
 
     def set_pattern_length_DAC(self, DAC, length):
-        DAC_IC = S5k_module.DAC_mapping[DAC][0]
-        self.write_AD9106(self.DAreg.PAT_PERIOD, length, DAC_IC)
-
-    def set_pattern_length_DAC(self, DAC, length):
         # input checks
         if length > 65535:
             raise ValueError('Pattern length {} not allowed. Needs to be under or equal to 65536'.format(length))
@@ -464,7 +570,8 @@ class S5k_module(object):
         self.sync_clock()
 
     def sync_clock(self):
-        # Check to see if internal oscillator needs to be disabled
+        # Check to see if internal (on-board) oscillator needs to be disabled.
+        # Disabling is done using the 'external' clock option.
         if self.reference == 'internal':
             reference = 1
         else:
@@ -490,17 +597,17 @@ class S5k_module(object):
             data = 1<<16 | 1<<17 | int((divisor/2))<<8
 
         DAC_IC = S5k_module.DAC_mapping[DAC][0]
-        # Connect each DAC_IC (SPI address) to the correct LMK register
+        # Provide the correct LMK register for each DAC_IC (each AWG chip) with its own SPI address
         LMK_reg = {0:6, 1:7, 3:0, 4:1}
         self.write_LMK_data(LMK_reg[DAC_IC], data)
 
         # Update the values in the DAC_clock_div array for all affected DACs
         for i in range(0, 16, 4):
             if DAC-1 in range(i, i+4):
-                self.DAC_clock_div[i:i+4] = 4*[divisor]
+                self.DAC_clock_div[i:i+4] = 4*[divisor]     # A sub-array of 4 consecutive DACs is updated with the same 'divisor'
 
         # Update the clock to the BIC to be the slowest used clock at the moment
-        # This is the clock with the largest divider
+        # This is the clock with the largest divider (max_divisor).
         max_divisor = max(self.DAC_clock_div)
         if max_divisor == 1:
             data = 1<<16 | 0<<17 | 0<<8
@@ -510,6 +617,103 @@ class S5k_module(object):
 
         # Synchronise all the clocks
         self.sync_clock()
+
+    def get_all_AWG_registers(self, DAC):
+        """read back all 68 registers from one of the AD9106 chips.
+           The function self-calculates which AWG chip is referenced,
+           based on the given DAC channel.
+           Note:
+            This is the same as the existing 'get_all_DAC_registers' function.
+            This function is preferred since the name is clearer.
+        """
+        self.get_all_DAC_registers(DAC)
+
+    def get_all_DAC_registers(self, DAC):
+        """read back all 68 registers from the AD9106 chip of a requested DAC
+           Note:
+            This in fact reads the registers from an AWG chip, so 4 DACs.
+            Keeping this function for back compatibility.
+        """
+        DAC_IC = S5k_module.DAC_mapping[DAC][0]        # i.e. the AWG chip
+        Di = S5k_module.DAC_mapping[DAC][1]            # a.k.a. DAC_internal
+        
+        regs = list(dir(self.DAreg)[0:68])
+        regs.remove('SRAM_DATA')
+        
+        print("\nDAC",DAC,"is produced by AWG (DAC_IC) number",DAC_IC,"channel",Di,".",
+        "The AWG register data is:")
+        for register in regs:
+            reg_addr = self.DAreg.__dict__[register]
+            DAC_raw_data = self.read_AD9106(reg_addr, DAC_IC)
+            print("    Register",register,"data: ",DAC_raw_data)
+
+    def get_one_DAC_registers(self, DAC):
+        """read back from the AD9106 
+           only the registers referring to a particular DAC channel
+        """
+        DAC_IC = S5k_module.DAC_mapping[DAC][0]
+        Di = S5k_module.DAC_mapping[DAC][1]            # a.k.a. DAC_internal
+        
+        regs = list(dir(self.DAreg)[0:68])             # all AWG registers
+        DAC_regs = regs[0:3]+[regs[8-Di]]+[regs[8]]+[regs[13-Di]]\
+        +regs[13:18]+[regs[23-Di]]+[regs[25-int((Di+1)/2)]]+regs[25:26]\
+        +[regs[29-int((Di+1)/2)]]+regs[29:30]+[regs[35-Di]]+[regs[39-Di]]\
+        +[regs[41-int((Di+1)/2)]]+regs[41:42]+[regs[47-Di]]+regs[47:49]\
+        +regs[62-4*Di : 66-4*Di]+regs[66:70]
+        regs.remove('SRAM_DATA')
+        
+        print("\nFor DAC",DAC,", produced by DAC_IC",DAC_IC,", the register data is:")
+        for register in DAC_regs:
+            reg_addr = self.DAreg.__dict__[register]
+            DAC_raw_data = self.read_AD9106(reg_addr, DAC_IC)
+            print("    Register",register,"data: ",DAC_raw_data)
+
+    def reset_DACs(self):
+        """
+        """        
+        # This operation must start with resetting the RAM
+        # because with the reversed order
+        # some registers would get set again upon calling 'upload_waveform'
+        reset_waveform = [0]*4096
+        for DAC_NUM in [1,5,9,13]:   # Covering all DAC_ICs, but referring indirectly via DACs and not DAC_ICs
+            self.upload_waveform(DAC = DAC_NUM, waveform = reset_waveform, start_addr = 0, set_pattern_length = True)
+
+        for DAC_IC in list(range(4)):
+            # registers for all 4 channels
+            self.write_AD9106(self.DAreg.PAT_PERIOD , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.PAT_STATUS, 0x0000, DAC_IC)
+
+            # registers for 2 channels
+            self.write_AD9106(self.DAreg.WAV2_1CONFIG , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.WAV4_3CONFIG , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.SAW2_1CONFIG , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.SAW4_3CONFIG , 0x0000, DAC_IC)
+
+            # registers for 1 channel
+            self.write_AD9106(self.DAreg.DAC1_CST , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC2_CST , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC3_CST , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC4_CST , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC1_DGAIN , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC2_DGAIN , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC3_DGAIN , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC4_DGAIN , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC1DOF , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC2DOF , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC3DOF , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.DAC4DOF , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.START_DLY1 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.START_DLY2 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.START_DLY3 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.START_DLY4 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.START_ADDR1 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.START_ADDR2 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.START_ADDR3 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.START_ADDR4 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.STOP_ADDR1 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.STOP_ADDR2 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.STOP_ADDR3 , 0x0000, DAC_IC)
+            self.write_AD9106(self.DAreg.STOP_ADDR4 , 0x0000, DAC_IC)
 
     def write_LMK_data(self, register, data):
         b1 = (data>>24) & 0xFF
