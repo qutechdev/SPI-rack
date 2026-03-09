@@ -42,7 +42,7 @@ class D4a_module(object):
             module (int): module number set on the hardware
         """
         self.file = os.path.abspath(__file__)
-        print("D4a initialized.\nFile path is", self.file,"\n")      # debug only
+        print("D4a initialized.\nPath to D4a file is", self.file,"\n")      # debug only
         
         self.module = module
         self.spi_rack = spi_rack
@@ -89,6 +89,7 @@ class D4a_module(object):
             self.config_led(adc, 0)
         
         self.SR_OEb         = 0     # initializing the SR output_enable\ to 'enabled'
+        self.set_output_enable(self.SR_OEb)
 
     def continuous_conversion_trig_and_read(self, adc):
         """Perform a conversion
@@ -165,11 +166,18 @@ class D4a_module(object):
         """
         running = True
         while running:
-            status = self._read_data(adc, self.reg.STATUS_REG, 1)
+            status = self._read_RDYb_bit(adc)
             # if new data available:
-            if (status[0]&0x80) == 0:
+            if status == 0:
                 running = False
         return
+        
+    def _read_RDYb_bit(self, adc):
+        """reads out the RDYb bit from the specified ADC
+        """
+        status = self._read_data(adc, self.reg.STATUS_REG, 1)
+        RDYb = status[0]&0x80
+        return RDYb
 
     def force_immediate_read_out(self, adc): 
         """Reads the ADC data output register, regardless of its RDY/complete status
@@ -970,13 +978,13 @@ class D4a_module(object):
         if user_sync_value not in range(0, 2):
             raise ValueError('The sync_value given {} is not a legal value. Possible values are in {}'.format(user_sync_value, range(0, 2)))
 
-        print("sync_signal from user is ",bytearray([user_sync_value]))
+        print("set_sync_signal:\n    sync_signal from user is ",bytearray([user_sync_value]))
         
         # The output byte holds two bits:
         # The 'SR_OEb' - the existing SR_OEb kept in memory
         # The trig/sync - the new user_sync_value given here explicitly by the user
         output_byte = self.SR_OEb<<7|user_sync_value
-        print("The output_byte from BIC to module is",output_byte)
+        print("    The output_byte from BIC to module is",output_byte)
         
         # Write to SPI addr 5 - the GPIO output direction
         self.spi_rack.write_data(self.module, 5, 0, BICPINS_SPEED, bytearray([output_byte]))
