@@ -96,9 +96,9 @@ class U2_module(D5a_module):
                 self.voltages[U2_module.DAC_register_neg]]
 
     def set_data_levels(self, voltages):
-        """Sets the data high/low voltages
+        """Sets the data low/high voltages
 
-        These voltages correspond to the digital high/low values. Also sets
+        These voltages correspond to the digital low/high values. Also sets
         the comparator level to midway between these values.
 
         Args:
@@ -114,7 +114,7 @@ class U2_module(D5a_module):
         """Gets the currently set data voltages
 
         Returns:
-            List of data voltages (float): [low_voltage, high_voltage]
+            List of data voltages (float): [high_voltage, low_voltage]
         """
         return [self.voltages[U2_module.DAC_data_pos],
                 self.voltages[U2_module.DAC_data_neg]]
