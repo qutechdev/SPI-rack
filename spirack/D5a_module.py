@@ -126,6 +126,11 @@ class D5a_module(object):
         DAC_ic = DAC//2
         # send data via controller
         self.spi_rack.write_data(self.module, DAC_ic, LTC2758_MODE, LTC2758_SPEED, data)
+        
+        # The change of span will also cause a change in the actual output voltage
+        # Make update to the voltages array to reflect that change
+        new_settings = self.get_settings(DAC)       # read from actual hardware
+        self.span[DAC] = new_settings[0]            # update to the cached variables
 
     def change_span(self, DAC, span):
         """Changes the software span of selected DAC without update
