@@ -66,8 +66,8 @@ class S5k_module(object):
         self.DAC_dgain = 16*[None]
         self.DAC_doffset = 16*[None]
         self.DAC_clock_div = 16*[1]
-
-        self.module_running = False
+        
+        self.software_triggered = False           # Formerly named 'self.module_running'
         self.reference = None
         self.set_clock_source('internal')
         self.run_module(False)
@@ -258,7 +258,7 @@ class S5k_module(object):
 
         Args:
             DAC (int: 1-16): DAC of which DC value to change
-            value (float): Voltage within range (by default ±2.875V)
+            value (float): Voltage within range (by default -2.875V to +2.875V)
         """
         if self.DAC_waveform_mode[DAC-1] != 'DC':
             #raise ValueError('DAC {} needs to be set to DC to set DC value'.format(DAC))
@@ -407,6 +407,30 @@ class S5k_module(object):
 
         self.write_AD9106(register, data, DAC_IC)
 
+    def set_trigger_source(self, trig_source):
+        """Select between software-based triggering or external triggering.
+        
+        You only need to run this function for external triggers. 
+        This is to keep backward compatibility since ealier releases only had 
+        software trigger implemented in the code,
+        which independently handled this register setting.
+        Args:
+            trig_source (string):  
+        """
+        # input checks
+        allowed_sources = ['external','software']
+        if trig_source not in allowed_sources:
+            raise ValueError("The 'trig_source' value of {} is illegal. Possible values are {}.".format(trig_source,allowed_sources))
+
+        # If external trigger, first config the register
+        if trig_source=='external':
+            for awg in [0, 1, 3, 4]:
+                self.write_AD9106(self.DAreg.PAT_STATUS, 1, awg)
+        # If you choose SW trigger, this setting will be taken care of by the run_module function
+        else:
+            for awg in [0, 1, 3, 4]:
+                self.write_AD9106(self.DAreg.PAT_STATUS, 0, awg)
+
     def run_module(self, run):
         """Starts the module
 
@@ -419,7 +443,7 @@ class S5k_module(object):
         # input checks
         if run not in range(2):
             raise ValueError("The 'run' parameter of {} is illegal. Possible values are 0 and 1.".format(run))
-        self.module_running = run
+        self.software_triggered = run
 
         for i in [0, 1, 3, 4]:
             self.write_AD9106(self.DAreg.PAT_STATUS, run, i)
@@ -435,9 +459,28 @@ class S5k_module(object):
 
     def get_run_status(self):
         """
+        Re-implemented. Now using the function 'get_S5k_run_status'
+        which reads from the AWG chips, thus represents cases where 
+        the triggering was from software or external.
         """
-        print("The S5k run status is",self.module_running,"\n")
-        #print("The trigger status is",)
+        awgs_status = self.get_S5k_run_status()
+        module_status = all(x == 1 for x in awgs_status)   # checks if all elements are 1, i.e. all AWGs are running
+        print("The S5k run status is",module_status,"\n")
+
+    def get_S5k_run_status(self):
+        """
+        Re-implemented. Now using the function 'get_S5k_run_status'
+        which reads from the AWG chips, thus now it represents cases where 
+        the triggering was from either software or external.
+        """
+        run_status = []
+        for i in [0, 1, 3, 4]:
+            data = self.read_AD9106(self.DAreg.PAT_STATUS, i)
+            data &= 0x0002
+            print("Run status of the AWG chips is:")
+            print("Chip {}:".format(["one", "two", "NULL", "three", "four"][i]),int(data),"\n")
+            run_status.append(int(data))
+        return run_status
 
     def upload_waveform(self, DAC, waveform, start_addr, set_pattern_length=True):
         """Upload waveform to selected DAC
@@ -580,11 +623,11 @@ class S5k_module(object):
         # Toggles the sync pin on the clock distribution/divider IC to sync
         # up all the clocks. Necessary after any clock change
         self.spi_rack.write_data(self.module, 5, BICPINS_MODE, BICPINS_SPEED,
-                                 bytearray([(self.module_running<<7) | 2 | reference]))
+                                 bytearray([(self.software_triggered<<7) | 2 | reference]))
         self.spi_rack.write_data(self.module, 5, BICPINS_MODE, BICPINS_SPEED,
-                                 bytearray([(self.module_running<<7) | 0 | reference]))
+                                 bytearray([(self.software_triggered<<7) | 0 | reference]))
         self.spi_rack.write_data(self.module, 5, BICPINS_MODE, BICPINS_SPEED,
-                                 bytearray([(self.module_running<<7) | 2 | reference]))
+                                 bytearray([(self.software_triggered<<7) | 2 | reference]))
 
     def set_clock_division(self, DAC, divisor):
         allowed_values = [1] + list(range(2, 512, 2))
