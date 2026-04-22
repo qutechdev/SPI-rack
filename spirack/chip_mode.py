@@ -12,29 +12,32 @@ AD7175_MODE = 3
 MCP320x_MODE = 0
 # DAC
 LTC2758_MODE = 0
+LTC2666_MODE = 0
 MAX521x_MODE = 1
 MAX5702_MODE = 1
 AD9106_MODE = 0
 # Other
-ADF4351_MODE = 0    # Frequency synthesizer
-LMK01010_MODE = 0   # Clock distribution/division/delay
+ADF4351_MODE = 0        # Frequency synthesizer
+LMK01010_MODE = 0       # Clock distribution/division/delay
 BICPINS_MODE = 0
-ADT7301_MODE = 0   # C1b temperature sensor
-CRYOMUX_MODE = 0   # cryomux shift register
-SAMD51_MODE = 0    # SAMD51G19A microcontroller
-HCT595_MODE = 0    # Shifr-register
+ADT7301_MODE = 0        # C1b temperature sensor
+CRYOMUX_MODE = 0        # cryomux shift register
+SAMD51_MODE = 0         # SAMD51G19A microcontroller
+HCT595_MODE = 0         # Shift-register
 
 # SPI clock = MCK/SCBR = 84MHz/SCBR (range 14..255)
 LTC2758_SPEED = 6       # 14MHz (40MHz later)
 LTC2758_RD_SPEED = 8    # 10.5MHz
-AD9106_SPEED = 6        # 14MHz (Can go higher)
-AD9106_RD_SPEED = 21    # 4MHz; (slow for test)
+LTC2666_SPEED = 6       #  4MHz
+LTC2666_RD_SPEED = 10   # 
+AD9106_SPEED = 6        # 14MHz
+AD9106_RD_SPEED = 21    # 4MHz
 SAMD51_SPEED = 10       # 8.4 MHz
 MAX5702_SPEED = 6       # 14MHz
 MAX521x_SPEED = 6       # 14MHz
 LMK01010_SPEED = 6      # 14MHz
-ADF4351_SPEED = 21      #  4MHz (slow for test)
-AD7175_SPEED = 21       #  4MHz (slow for test)
+ADF4351_SPEED = 21      #  4MHz
+AD7175_SPEED = 21       #  4MHz
 MCP320x_SPEED = 84      #  1MHz
 BICPINS_SPEED = 84      #  1MHz
 ADT7301_SPEED = 84      #  1MHz
