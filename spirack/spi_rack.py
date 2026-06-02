@@ -381,3 +381,12 @@ class SPI_rack(serial.Serial):
 
             version = self.readline().decode('utf-8')
             return version[:-1]
+
+    def is_C1b_communicating(self):
+        """
+        """
+        if (self.get_battery()==[0.0,0.0]) and (self.get_temperature()==0.0):
+            if (self.get_battery()==[0.0,0.0]) and (self.get_temperature()==0.0):
+                return 0
+        return 1
+
