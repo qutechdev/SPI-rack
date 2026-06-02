@@ -392,3 +392,42 @@ class D5a_module(object):
         self.span[DAC] = span
 
         return [voltage, span]
+
+    def is_D5a_communicating(self):
+        """Checks proper communication with the D5a.
+        """
+        DAC = 0   # DAC 0 is expected available for any D5a version (any number of DACs)
+
+        # Determine which DAC in IC by checking even/uneven
+        address = (DAC%2)<<1
+        # Determine in which IC the DAC is, for SPI chip select
+        DAC_ic = DAC//2
+
+        # Read initial value of input code resgiter.
+        # Any value could be legal and user-given
+    
+        # Command to read input code register
+        command = 0b1011
+        data = bytearray([(command<<4) | address, 0, 0, 0])
+        orig_data_rd = self.spi_rack.read_data(self.module, DAC_ic, LTC2758_MODE, LTC2758_RD_SPEED, data)
+        orig_value = (orig_data_rd[1]<<10) | (orig_data_rd[2]<<2) | (orig_data_rd[3]>>6)
+
+        # Write a new value and read back to check
+        # First write to the input code register
+        test_value = 177033                           # Arbitrary, 0b10 1011 0011 1000 1001
+        self.change_value(DAC, test_value)
+        # Now read back the updated value
+        command = 0b1011
+        data = bytearray([(command<<4) | address, 0, 0, 0])
+        new_data_rd = self.spi_rack.read_data(self.module, DAC_ic, LTC2758_MODE, LTC2758_RD_SPEED, data)
+        new_value = (new_data_rd[1]<<10) | (new_data_rd[2]<<2) | (new_data_rd[3]>>6)
+    
+        # Write again the original value
+        self.change_value(DAC, orig_value)
+    
+        # Check and return the result
+        if (test_value != new_value):
+            return 0
+        else:
+            return 1
+
